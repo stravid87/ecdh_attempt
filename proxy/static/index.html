@@ -1,0 +1,81 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <script src="wasm_exec.js"></script>
+    <!-- <script src="https://cdn.jsdelivr.net/npm/vue@2.6.10/dist/vue.min.js"></script> -->
+  </head>
+  <body>
+    <div id="encryption-and-decryption">
+      <div>
+        <button id="do-ECDH">Do ECDH</button>
+        <br/>
+        <br/>
+        <button id="get-random-joke">Get Random Joke</button>
+        <div id="display-div" class="text-display"></div>
+        <br/>
+        <button id="post-random-joke">Post Random Joke</button>
+        <br/>
+        <input id="joke-input" type="text" class="text-display"></div>
+      </div>
+    </div>
+  </body>
+  <footer>
+    <div><h4>Footer: Errors Go Here:</h4></div>
+    <div id="error-display" class="text-display"></div>
+  </footer>
+
+  <script name="IIFE loads WASM">
+    // Go and WebAssembly initialization to an async function, call it immediately.
+    (async function(){
+      console.log("IIFE Called")
+      const go = new Go();
+      await WebAssembly.instantiateStreaming(fetch("ecdh.wasm"), go.importObject).then((result) => {
+        go.run(result.instance);
+      })
+    })()
+  </script>
+
+  <script name="JS functions which call the WASM functions">
+    const btnECDH = window.document.getElementById("do-ECDH")
+    btnECDH.addEventListener("click", doECDH)
+    const btnGRJ = window.document.getElementById("get-random-joke")
+    const displayDiv = window.document.getElementById("display-div")
+    const btnPRJ = window.document.getElementById("post-random-joke")
+    const jokeInput = window.document.getElementById("joke-input")
+    const errDisplay = window.document.getElementById("error-display") 
+
+    async function doECDH(){
+      try {
+        const result = await window.doECDH();
+        displayDiv.innerText = result
+      } catch(err) {
+        errDisplay.innerText = err
+        console.log(err)
+      }
+    }
+
+    async function getEncryptedText(){
+      try {
+        const result = await window.getEncryptedData();
+        return result;
+      } catch (err) {
+        this.plainText = err;
+        console.err(`An error occurred: ${err}`);
+      }
+    }
+
+    async function publicKey(){
+      this.publicKey = "publicKey"
+    }
+  </script>
+
+  <style>
+    .text-display {
+      min-width: 80vw;
+      max-width: 80vw;
+      min-height: 10rem;
+      border: grey solid;
+    }
+  </style>
+
+</html>
