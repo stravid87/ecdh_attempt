@@ -3,14 +3,21 @@ package main
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/ecdh"
 	"crypto/elliptic"
 	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"syscall/js"
 )
+
+type ECDH_KeyPair struct {
+	PrivateKey *ecdh.PrivateKey
+	PublicKey  *ecdh.PublicKey
+}
 
 func main() {
 	c := make(chan struct{})
@@ -31,12 +38,12 @@ func doECDH(this js.Value, args []js.Value) interface{} {
 		reject := args[1]
 		go func() {
 			// Frontend server generates its keys
-			// frontendPrivate, frontendPublic, err := GenerateKeyPair()
-			// if err != nil {
-			// 	fmt.Println("Error generating frontend keys:", err)
-			// 	reject.Invoke(js.ValueOf(err.Error()))
-			// 	return
-			// }
+			frontendKeyPair, err := GenerateKeyPair(ecdh.P256())
+			if err != nil {
+				fmt.Println("Error generating frontend keys:", err.Error())
+				reject.Invoke(js.ValueOf(err.Error()))
+				return
+			}
 
 			// The frontend server sends its public key to the backend server and receives the backend server's public key
 			resp, err := http.Get("http://localhost:8080/publicKey")
@@ -62,30 +69,29 @@ func doECDH(this js.Value, args []js.Value) interface{} {
 				return
 			}
 
-			backendPublicKey, err := ioutil.ReadAll(resp.Body)
+			backend_pubk, err := ioutil.ReadAll(resp.Body)
 			if err != nil {
 				fmt.Println("Error reading backend public key:", err)
 				reject.Invoke(js.ValueOf(err.Error()))
 				return
 			}
 
-			resolve.Invoke(string(backendPublicKey))
-
-			// The frontend server generates the shared secret
-			// sharedSecret, err := GenerateSharedSecret(frontendPrivate, backendPublicKey)
-			// if err != nil {
-			// 	fmt.Println("Error generating shared secret:", err)
-			// 	reject.Invoke(js.ValueOf(err.Error()))
-			// 	return
-			// }
+			//The frontend server generates the shared secret
+			sharedSecret, err := GenerateSharedSecret(frontendKeyPair.PrivateKey.Bytes(), backend_pubk)
+			if err != nil {
+				fmt.Println("Error generating shared secret:", err)
+				reject.Invoke(js.ValueOf(err.Error()))
+				return
+			}
 
 			// The frontend server sends its public key to the backend server and receives an encrypted message
-			// resp, err = http.Get("http://localhost:9091/message?publicKey=" + hex.EncodeToString(frontendPublic))
-			// if err != nil {
-			// 	fmt.Println("Error getting message:", err)
-			// 	reject.Invoke(js.ValueOf(err.Error()))
-			// 	return
-			// }
+			//fmt.Println("http://localhost:8080/wasmPubk?publicKey=" + hex.EncodeToString(frontendKeyPair.PublicKey.Bytes()))
+			resp, err = http.Get("http://localhost:8080/wasmPubk?publicKey=" + hex.EncodeToString(frontendKeyPair.PublicKey.Bytes()))
+			if err != nil {
+				fmt.Println("Error getting message:", err)
+				reject.Invoke(js.ValueOf(err.Error()))
+				return
+			}
 
 			// Duplicate the resp and resp.Body null checks for the second http.Get
 			// if resp != nil {
@@ -115,7 +121,8 @@ func doECDH(this js.Value, args []js.Value) interface{} {
 			// 	return
 			// }
 
-			// resolve.Invoke(string(plaintext))
+			fmt.Println(sharedSecret)
+			resolve.Invoke(string(sharedSecret))
 		}()
 		return nil
 	}
@@ -148,14 +155,17 @@ func decrypt(ciphertext []byte, key []byte) (string, error) {
 }
 
 // GenerateKeyPair generates a public and private key pair.
-func GenerateKeyPair() ([]byte, []byte, error) {
-	private, x, y, err := elliptic.GenerateKey(elliptic.P256(), rand.Reader)
+func GenerateKeyPair(curve ecdh.Curve) (ECDH_KeyPair, error) {
+	privateKey, err := curve.GenerateKey(rand.Reader)
 	if err != nil {
-		return nil, nil, err
+		fmt.Println()
+		return ECDH_KeyPair{}, fmt.Errorf("Error calling curve.GenerateKey: %w", err)
 	}
-	public := elliptic.Marshal(elliptic.P256(), x, y)
 
-	return private, public, nil
+	publicKey := privateKey.PublicKey()
+
+	//Note: for ECDH, use the crypto/ecdh package. This function returns an encoding equivalent to that of PublicKey.Bytes in crypto/ecdh.
+	return ECDH_KeyPair{PrivateKey: privateKey, PublicKey: publicKey}, nil
 }
 
 // GenerateSharedSecret generates a shared secret from own private key and other party's public key.
