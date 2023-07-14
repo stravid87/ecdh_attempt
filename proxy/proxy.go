@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/ecdh"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -17,12 +19,6 @@ type ECDH_KeyPair struct {
 	PrivateKey *ecdh.PrivateKey
 	PublicKey  *ecdh.PublicKey
 }
-
-// func (kp ECDH_KeyPair) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-// 	fmt.Println("/publicKey hit...")
-// 	pk_reader := bytes.NewReader(kp.PublicKey.Bytes())
-// 	io.Copy(w, pk_reader)
-// }
 
 var keyPair_backend ECDH_KeyPair
 
@@ -58,6 +54,7 @@ func main() {
 			return
 		}
 		fmt.Printf("Shared secret: %v", sharedSecret)
+
 	})
 
 	fmt.Println("Listening on localhost:8080")
@@ -85,4 +82,30 @@ func GenerateSharedSecret(privateKey, publicKey []byte) ([]byte, error) {
 	z, _ := elliptic.P256().ScalarMult(x, y, privateKey)
 
 	return z.Bytes(), nil
+}
+
+func Encrypt(plaintext []byte, key []byte) ([]byte, error) {
+	// Validate key length
+	if len(key) != 16 || len(key) != 24 || len(key) != 32 {
+		return nil, fmt.Errorf("crypto/aes: invalid key size %d, want: 16, 24 or 32", len(key))
+	}
+
+	cipherBlock, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	gcm, err := cipher.NewGCM(cipherBlock)
+	if err != nil {
+		return nil, err
+	}
+
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err = io.ReadFull(rand.Reader, nonce); err != nil {
+		return nil, err
+	}
+
+	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
+
+	return ciphertext, nil
 }

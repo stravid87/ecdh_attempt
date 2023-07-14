@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"syscall/js"
@@ -132,26 +133,23 @@ func doECDH(this js.Value, args []js.Value) interface{} {
 	return promise
 }
 
-func decrypt(ciphertext []byte, key []byte) (string, error) {
-	c, err := aes.NewCipher(key)
-	if err != nil {
-		return "error: ", err
+func getRandomJoke(this js.Value, args []js.Value) interface{} {
+
+	var resolve_reject_internals = func(this js.Value, args []js.Value) interface{} {
+		resolve := args[0]
+		reject := args[1]
+		go func() {
+			// Reach out to the server to get an encrypted random joke
+			// Pull from a memory location the shared secret
+			// Decrypt the joke
+			// Return the plain text to the JS front end
+		}()
+		return nil
 	}
 
-	gcm, err := cipher.NewGCM(c)
-	if err != nil {
-		return "error: ", err
-	}
-
-	nonceSize := gcm.NonceSize()
-	if len(ciphertext) < nonceSize { //length of ciphertext
-		return "error: ", errors.New("ciphertext too short")
-	}
-
-	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
-	byteText, err := gcm.Open(nil, nonce, ciphertext, nil)
-
-	return string(byteText), err
+	promiseConstructor := js.Global().Get("Promise")
+	promise := promiseConstructor.New(js.FuncOf(resolve_reject_internals))
+	return promise
 }
 
 // GenerateKeyPair generates a public and private key pair.
@@ -174,6 +172,56 @@ func GenerateSharedSecret(privateKey, publicKey []byte) ([]byte, error) {
 	z, _ := elliptic.P256().ScalarMult(x, y, privateKey)
 
 	return z.Bytes(), nil
+}
+
+func Encrypt(plaintext []byte, key []byte) ([]byte, error) {
+	// Validate key length
+	fmt.Println(len(key))
+	if len(key) != 16 && len(key) != 24 && len(key) != 32 {
+		return nil, fmt.Errorf("crypto/aes: invalid key size %d, want: 16, 24 or 32", len(key))
+	}
+
+	cipherBlock, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	gcm, err := cipher.NewGCM(cipherBlock)
+	if err != nil {
+		return nil, err
+	}
+
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err = io.ReadFull(rand.Reader, nonce); err != nil {
+		return nil, err
+	}
+
+	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
+
+	return ciphertext, nil
+}
+
+func Decrypt(ciphertext []byte, key []byte) ([]byte, error) {
+	c, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, fmt.Errorf("Error creating aes cipher: %w", err)
+	}
+
+	gcm, err := cipher.NewGCM(c)
+	if err != nil {
+		return nil, fmt.Errorf("This is the err 1: %w", err)
+	}
+
+	nonceSize := gcm.NonceSize()
+	fmt.Println("Length of ciphertext passed in: ", len(ciphertext)) // How long is the ciphertext?
+	if len(ciphertext) < nonceSize {
+		return nil, errors.New("ciphertext too short")
+	}
+
+	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
+	byteText, err := gcm.Open(nil, nonce, ciphertext, nil)
+
+	return byteText, err
 }
 
 // Scratch Pad:
@@ -210,19 +258,7 @@ func GenerateSharedSecret(privateKey, publicKey []byte) ([]byte, error) {
 // 					fmt.Println("Server returned non-OK status: ", resp.Status)
 // 				}
 // 			}
-
-// 			backendPublic, err := ioutil.ReadAll(resp.Body)
-// 			if err != nil {
-// 				fmt.Println("Error reading backend public key:", err)
-// 				reject.Invoke(js.ValueOf(err.Error()))
-// 				return
-// 			}
-
-// 			// The frontend server generates the shared secret
-// 			sharedSecret, err := GenerateSharedSecret(frontendPrivate, backendPublic)
-// 			if err != nil {
-// 				fmt.Println("Error generating shared secret:", err)
-// 				reject.Invoke(js.ValueOf(err.Error()))
+// oke(js.ValueOf(err.Error()))
 // 				return
 // 			}
 
@@ -235,7 +271,19 @@ func GenerateSharedSecret(privateKey, publicKey []byte) ([]byte, error) {
 // 			}
 // 			// Duplicate the resp and resp.Body null checks for the second http.Get
 // 			if resp != nil {
-// 				if resp.Body != nil {
+// 				if resp.B
+// 			backendPublic, err := ioutil.ReadAll(resp.Body)
+// 			if err != nil {
+// 				fmt.Println("Error reading backend public key:", err)
+// 				reject.Invoke(js.ValueOf(err.Error()))
+// 				return
+// 			}
+
+// 			// The frontend server generates the shared secret
+// 			sharedSecret, err := GenerateSharedSecret(frontendPrivate, backendPublic)
+// 			if err != nil {
+// 				fmt.Println("Error generating shared secret:", err)
+// 				reject.Invody != nil {
 // 					defer resp.Body.Close()
 // 				}
 // 				// Checking the HTTP status code
