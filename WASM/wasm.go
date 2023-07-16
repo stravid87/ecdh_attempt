@@ -12,6 +12,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"strings"
 	"syscall/js"
 )
 
@@ -26,6 +27,7 @@ func main() {
 	c := make(chan struct{})
 	js.Global().Set("doECDH", js.FuncOf(doECDH))
 	js.Global().Set("getRandomJoke", js.FuncOf(getRandomJoke))
+	js.Global().Set("postRandomJoke", js.FuncOf(postRandomJoke))
 	<-c // block until c pumps something out
 }
 
@@ -162,6 +164,46 @@ func getRandomJoke(this js.Value, args []js.Value) interface{} {
 		return nil
 	}
 
+	promiseConstructor := js.Global().Get("Promise")
+	promise := promiseConstructor.New(js.FuncOf(resolve_reject_internals))
+	return promise
+}
+
+func postRandomJoke(this js.Value, args []js.Value) interface{} {
+	fmt.Println("args[0]", args[0])
+	joke_str := args[0].String()
+	var resolve_reject_internals = func(this js.Value, args []js.Value) interface{} {
+		resolve := args[0]
+		reject := args[1]
+		go func(joke string) {
+			fmt.Println("Now attempting to post joke.")
+
+			ciphertext, err := Encrypt([]byte(joke), sharedSecret)
+
+			ciphertext_hex := hex.EncodeToString(ciphertext)
+
+			r := strings.NewReader(ciphertext_hex)
+
+			response, err := http.Post("http://localhost:8080/receive-joke", "text/html", r)
+			if err != nil {
+				reject.Invoke(js.ValueOf(err.Error()))
+			}
+
+			defer response.Body.Close()
+
+			res, err := io.ReadAll(response.Body)
+			if err != nil {
+				fmt.Println("Error reading response.Body from ':8080/post-random-joke")
+				reject.Invoke(js.ValueOf(err.Error()))
+			}
+
+			fmt.Println("res: ", string(res))
+
+			resolve.Invoke(js.ValueOf(string(res)))
+			return
+		}(joke_str)
+		return nil
+	}
 	promiseConstructor := js.Global().Get("Promise")
 	promise := promiseConstructor.New(js.FuncOf(resolve_reject_internals))
 	return promise

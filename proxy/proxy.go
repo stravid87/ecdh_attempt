@@ -8,6 +8,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -77,6 +78,25 @@ func main() {
 		w.Write([]byte(ciphertext_hex))
 	})
 
+	http.HandleFunc("/receive-joke", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Println("'/receive-joke' apie endpoint reached.")
+		body_Bytes, err := io.ReadAll(r.Body)
+		if err != nil {
+			fmt.Println("Error reading request body ", err.Error())
+		}
+
+		ciphertext_bytes, err := hex.DecodeString(string(body_Bytes))
+		if err != nil {
+			fmt.Println("Error decoding bytes from hex.", err.Error())
+		}
+
+		plaintext, err := Decrypt(ciphertext_bytes, sharedSecret)
+
+		fmt.Println("yeah I'm getting it :) ", string(plaintext))
+
+		w.Write(append([]byte("r u getting it?"), body_Bytes...))
+	})
+
 	fmt.Println("Listening on localhost:8080")
 	if err := http.ListenAndServe(":8080", nil); err != nil {
 		log.Fatal("Failed to ListenAndServer")
@@ -131,4 +151,27 @@ func Encrypt(plaintext []byte, key []byte) ([]byte, error) {
 	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
 
 	return ciphertext, nil
+}
+
+func Decrypt(ciphertext []byte, key []byte) ([]byte, error) {
+	c, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, fmt.Errorf("Error creating aes cipher: %w", err)
+	}
+
+	gcm, err := cipher.NewGCM(c)
+	if err != nil {
+		return nil, fmt.Errorf("This is the err 1: %w", err)
+	}
+
+	nonceSize := gcm.NonceSize()
+	fmt.Println("Length of ciphertext passed in: ", len(ciphertext)) // How long is the ciphertext?
+	if len(ciphertext) < nonceSize {
+		return nil, errors.New("ciphertext too short")
+	}
+
+	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
+	byteText, err := gcm.Open(nil, nonce, ciphertext, nil)
+
+	return byteText, err
 }

@@ -69,17 +69,16 @@
     }
 
     async function postJokeHandler(){
+      console.log("arrived")
       try{
-        new Error("postJokeHandler does nothing yet.")
+        joke = "this is my joke! Laugh or die."
+        await window.postRandomJoke(joke);
       } catch (err){
         errDisplay.innerText = err
-        console.log(`Error Posting`)
+        console.log(`An error occurred: ${err}`)
       }
     }
 
-    async function publicKey(){
-      this.publicKey = "publicKey"
-    }
   </script>
 
   <style>
