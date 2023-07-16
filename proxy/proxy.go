@@ -22,6 +22,8 @@ type ECDH_KeyPair struct {
 
 var keyPair_backend ECDH_KeyPair
 
+var sharedSecret []byte
+
 func init() {
 	ECDH_KeyPair, err := GenerateKeyPair(ecdh.P256())
 	if err != nil {
@@ -48,13 +50,31 @@ func main() {
 		if err != nil {
 			fmt.Println("Error decoding the pubk_client_str to []bytes: %s", err.Error())
 		}
-		sharedSecret, err := GenerateSharedSecret(keyPair_backend.PrivateKey.Bytes(), pubk_client_bytes)
+		ss, err := GenerateSharedSecret(keyPair_backend.PrivateKey.Bytes(), pubk_client_bytes)
 		if err != nil {
-			fmt.Fprintf(w, "Error @ /pub-key-api", err.Error())
+			fmt.Fprintf(w, "Error calling GenerateSharedSecret()", err.Error())
 			return
 		}
-		fmt.Printf("Shared secret: %v", sharedSecret)
+		sharedSecret = ss
+		fmt.Printf("Shared Secret: %v\n", sharedSecret)
+	})
 
+	http.HandleFunc("/joke", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Println("'/joke' api endpoint reached.")
+
+		joke := []byte("This is my joke that is very not random.")
+
+		ciphertext_bytes, err := Encrypt(joke, sharedSecret)
+		if err != nil {
+			serverError := fmt.Sprintf("Error encrypting: %s", err.Error())
+			w.WriteHeader(500)
+			w.Write([]byte(serverError))
+		}
+
+		ciphertext_hex := hex.EncodeToString(ciphertext_bytes)
+
+		fmt.Println("ciphertext_hex: ", ciphertext_hex)
+		w.Write([]byte(ciphertext_hex))
 	})
 
 	fmt.Println("Listening on localhost:8080")
@@ -66,7 +86,6 @@ func main() {
 func GenerateKeyPair(curve ecdh.Curve) (ECDH_KeyPair, error) {
 	privateKey, err := curve.GenerateKey(rand.Reader)
 	if err != nil {
-		fmt.Println()
 		return ECDH_KeyPair{}, fmt.Errorf("Error calling curve.GenerateKey: %w", err)
 	}
 
@@ -86,8 +105,12 @@ func GenerateSharedSecret(privateKey, publicKey []byte) ([]byte, error) {
 
 func Encrypt(plaintext []byte, key []byte) ([]byte, error) {
 	// Validate key length
-	if len(key) != 16 || len(key) != 24 || len(key) != 32 {
-		return nil, fmt.Errorf("crypto/aes: invalid key size %d, want: 16, 24 or 32", len(key))
+	// if len(key) != 16 || len(key) != 24 || len(key) != 32 {
+	// 	return nil, fmt.Errorf("crypto/aes: invalid key size %d, want: 16, 24 or 32", len(key))
+	// }
+
+	if len(key) != 32 {
+		return nil, fmt.Errorf("crypto/aes: invalid key size %d, wanted: 32", len(key))
 	}
 
 	cipherBlock, err := aes.NewCipher(key)

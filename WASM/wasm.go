@@ -20,10 +20,12 @@ type ECDH_KeyPair struct {
 	PublicKey  *ecdh.PublicKey
 }
 
+var sharedSecret []byte
+
 func main() {
 	c := make(chan struct{})
 	js.Global().Set("doECDH", js.FuncOf(doECDH))
-	//js.Global().Set("getEncryptedData", js.FuncOf(getEncryptedData))
+	js.Global().Set("getRandomJoke", js.FuncOf(getRandomJoke))
 	<-c // block until c pumps something out
 }
 
@@ -78,12 +80,14 @@ func doECDH(this js.Value, args []js.Value) interface{} {
 			}
 
 			//The frontend server generates the shared secret
-			sharedSecret, err := GenerateSharedSecret(frontendKeyPair.PrivateKey.Bytes(), backend_pubk)
+			ss, err := GenerateSharedSecret(frontendKeyPair.PrivateKey.Bytes(), backend_pubk)
 			if err != nil {
 				fmt.Println("Error generating shared secret:", err)
 				reject.Invoke(js.ValueOf(err.Error()))
 				return
 			}
+			//fmt.Println(sharedSecret)
+			sharedSecret = ss
 
 			// The frontend server sends its public key to the backend server and receives an encrypted message
 			//fmt.Println("http://localhost:8080/wasmPubk?publicKey=" + hex.EncodeToString(frontendKeyPair.PublicKey.Bytes()))
@@ -94,36 +98,7 @@ func doECDH(this js.Value, args []js.Value) interface{} {
 				return
 			}
 
-			// Duplicate the resp and resp.Body null checks for the second http.Get
-			// if resp != nil {
-			// 	if resp.Body != nil {
-			// 		defer resp.Body.Close()
-			// 	}
-			// 	// Checking the HTTP status code
-			// 	if resp.StatusCode != http.StatusOK {
-			// 		fmt.Println("Server returned non-OK status: ", resp.Status)
-			// 	}
-			// }
-
-			// ciphertext, err := ioutil.ReadAll(resp.Body)
-			// if err != nil {
-			// 	fmt.Println("Error reading message:", err)
-			// 	reject.Invoke(js.ValueOf(err.Error()))
-			// 	return
-			// }
-			// ciphertextString, _ := hex.DecodeString(string(ciphertext))
-
-			// The frontend server decrypts the message
-			// plaintext, err := decrypt(ciphertextString, sharedSecret)
-			// fmt.Println(plaintext)
-			// if err != nil {
-			// 	fmt.Println("Error decrypting message:", err)
-			// 	reject.Invoke(js.ValueOf(err.Error()))
-			// 	return
-			// }
-
-			fmt.Println(sharedSecret)
-			resolve.Invoke(string(sharedSecret))
+			resolve.Invoke("ECDH a Success")
 		}()
 		return nil
 	}
@@ -143,6 +118,46 @@ func getRandomJoke(this js.Value, args []js.Value) interface{} {
 			// Pull from a memory location the shared secret
 			// Decrypt the joke
 			// Return the plain text to the JS front end
+			resp, err := http.Get("http://localhost:8080/joke")
+			if err != nil {
+				fmt.Println("Error getting :8080/joke: %s", err.Error())
+				reject.Invoke(js.ValueOf(err.Error()))
+			}
+			if resp == nil || resp.Body == nil {
+				fmt.Println("Response of response body from http://localhost:8080/joke is nil")
+			}
+
+			defer resp.Body.Close()
+
+			responseBody, err := io.ReadAll(resp.Body)
+			if err != nil {
+				fmt.Println("Error reading resp.Body:", err.Error())
+				reject.Invoke(js.ValueOf(err.Error()))
+				return
+			}
+
+			// Checking the HTTP status code
+			if resp.StatusCode != http.StatusOK {
+				fmt.Println("Server returned non-OK status: ", resp.Status)
+				reject.Invoke(js.ValueOf(string(responseBody)))
+				return
+			}
+
+			ciphertext_bytes, err := hex.DecodeString(string(responseBody))
+			if err != nil {
+				fmt.Println("Error decoding resp.Body:", err.Error())
+				reject.Invoke(js.ValueOf(err.Error()))
+			}
+
+			// The frontend server decrypts the message
+			plaintext, err := Decrypt(ciphertext_bytes, sharedSecret)
+			if err != nil {
+				fmt.Println("Error decrypting message:", err)
+				reject.Invoke(js.ValueOf(err.Error()))
+				return
+			}
+
+			resolve.Invoke(string(plaintext))
 		}()
 		return nil
 	}
@@ -177,8 +192,8 @@ func GenerateSharedSecret(privateKey, publicKey []byte) ([]byte, error) {
 func Encrypt(plaintext []byte, key []byte) ([]byte, error) {
 	// Validate key length
 	fmt.Println(len(key))
-	if len(key) != 16 && len(key) != 24 && len(key) != 32 {
-		return nil, fmt.Errorf("crypto/aes: invalid key size %d, want: 16, 24 or 32", len(key))
+	if len(key) != 32 {
+		return nil, fmt.Errorf("crypto/aes: invalid key size %d, needed 32", len(key))
 	}
 
 	cipherBlock, err := aes.NewCipher(key)

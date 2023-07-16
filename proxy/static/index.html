@@ -8,14 +8,12 @@
     <div id="encryption-and-decryption">
       <div>
         <button id="do-ECDH">Do ECDH</button>
-        <br/>
-        <br/>
-        <button id="get-random-joke">Get Random Joke</button>
-        <div id="display-div" class="text-display"></div>
-        <br/>
-        <button id="post-random-joke">Post Random Joke</button>
-        <br/>
-        <input id="joke-input" type="text" class="text-display"></div>
+        <p id="ecdh-display"> __ECDH__ </p><br/><br/>
+        <button id="get-random-joke">Get Random Joke</button><br/>
+        <!-- <input id="display-div" class="text-display" placeholder="Random Joke Display"><br/><br/> -->
+        <div id="display-div" class="text-display" placeholder="Random Joke Display"></div><br/><br/>
+        <button id="post-random-joke">Post Random Joke</button><br/>
+        <input id="joke-input" type="text" class="text-display" placeholder="Next Random Joke">
       </div>
     </div>
   </body>
@@ -36,31 +34,46 @@
   </script>
 
   <script name="JS functions which call the WASM functions">
+    const ecdhDisplay = window.document.getElementById("ecdh-display")
     const btnECDH = window.document.getElementById("do-ECDH")
     btnECDH.addEventListener("click", doECDH)
-    const btnGRJ = window.document.getElementById("get-random-joke")
+
     const displayDiv = window.document.getElementById("display-div")
-    const btnPRJ = window.document.getElementById("post-random-joke")
+    const btnGRJ = window.document.getElementById("get-random-joke")
+    btnGRJ.addEventListener("click", randomJokeHandler)
+
     const jokeInput = window.document.getElementById("joke-input")
+    const btnPRJ = window.document.getElementById("post-random-joke")
+    btnPRJ.addEventListener("click", postJokeHandler)
+
     const errDisplay = window.document.getElementById("error-display") 
 
     async function doECDH(){
       try {
         const result = await window.doECDH();
-        displayDiv.innerText = result
+        ecdhDisplay.innerText = result
       } catch(err) {
         errDisplay.innerText = err
         console.log(err)
       }
     }
 
-    async function getEncryptedText(){
+    async function randomJokeHandler(){
       try {
-        const result = await window.getEncryptedData();
-        return result;
+        const result = await window.getRandomJoke();
+        displayDiv.innerText = result
       } catch (err) {
-        this.plainText = err;
-        console.err(`An error occurred: ${err}`);
+        errDisplay.innerText = err;
+        console.error(`An error occurred: ${err}`);
+      }
+    }
+
+    async function postJokeHandler(){
+      try{
+        new Error("postJokeHandler does nothing yet.")
+      } catch (err){
+        errDisplay.innerText = err
+        console.log(`Error Posting`)
       }
     }
 
